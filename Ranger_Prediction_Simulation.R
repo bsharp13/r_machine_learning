@@ -1,6 +1,7 @@
 library(tidyverse)
 library(caret)
 library(ranger)
+library(scales)
 
 #-------------------------------------------------------------------------------
 
@@ -40,9 +41,9 @@ run <- function(seed, output = 'mean') {
     x3 = rnorm(1000),
     x4 = sample(0:1, 1000, prob = c(0.3, 0.7), replace = TRUE)
   ) %>% mutate(
-    y = as.numeric(
+    y = as.factor(as.numeric(
       round(0.5 + (x1 / 3) + (x2 / 3) - (0.2 * x4) + (x1 * x4)) <= 0
-    )
+    ))
   )
   
   # Partition Data
@@ -56,7 +57,7 @@ run <- function(seed, output = 'mean') {
   prob_trees <- ranger(
     y ~ .,
     data = training,
-    num.trees = 200,
+    num.trees = 300,
     mtry = 2,
     probability = TRUE
   )
@@ -64,22 +65,23 @@ run <- function(seed, output = 'mean') {
   binary_trees <- ranger(
     y ~ .,
     data = training,
-    num.trees = 200,
+    num.trees = 300,
     mtry = 2
   )
   
   # Model assessment
   prob_tree_pred <- predict(prob_trees, testing)$predictions[,1]
-  binary_tree_pred <- 
-    rowMeans(predict(binary_trees, testing, predict.all = TRUE)$predictions)
+  binary_tree_pred <- 1 - rowMeans(
+    predict(binary_trees, testing, predict.all = TRUE)$predictions - 1
+  )
   
   # Calculate output metric difference in predictions
   if (output == 'mean') {
-    result <- mean(prob_tree_pred - binary_tree_pred)
+    result <- mean(abs(prob_tree_pred - binary_tree_pred))
   } else if (output == 'median') {
-    result <- median(prob_tree_pred - binary_tree_pred)
+    result <- median(abs(prob_tree_pred - binary_tree_pred))
   } else if (output == 'max') {
-    result <- max(prob_tree_pred - binary_tree_pred)
+    result <- max(abs(prob_tree_pred - binary_tree_pred))
   }
   
   return(result)
@@ -87,13 +89,55 @@ run <- function(seed, output = 'mean') {
 }
 
 # Run simulations
-n_reps <- 1000
+n_reps <- 10000
 mean_diff <- sapply(1:n_reps, function(i) run(i, output = 'mean'))
-mean_diff <- sapply(1:n_reps, function(i) run(i, output = 'median'))
+median_diff <- sapply(1:n_reps, function(i) run(i, output = 'median'))
 max_diff <- sapply(1:n_reps, function(i) run(i, output = 'max'))
 
+# Visualize
+df <- data_frame(mean_diff, median_diff, max_diff)
 
+ggplot(df, aes(x = mean_diff, y = ..density..)) +
+  geom_histogram(binwidth = 0.0005, col = '#FFFFFF', fill = '#21A9C4') +
+  geom_density(lwd = 0.4) +
+  ggtitle('Distribution of Mean Difference in Predicted Probability') +
+  labs(x = 'Mean Difference', y = 'Density') +
+  scale_x_continuous(label = percent) +
+  theme_bw()
 
+ggplot(df, aes(x = median_diff, y = ..density..)) +
+  geom_histogram(binwidth = 0.0005, col = '#FFFFFF', fill = '#21A9C4') +
+  geom_density(lwd = 0.4) +
+  ggtitle('Distribution of Median Difference in Predicted Probability') +
+  labs(x = 'Median Difference', y = 'Density') +
+  scale_x_continuous(label = percent) +
+  theme_bw()
+
+ggplot(df, aes(x = max_diff, y = ..density..)) +
+  geom_histogram(binwidth = 0.01, col = '#FFFFFF', fill = '#21A9C4') +
+  geom_density(lwd = 0.4) +
+  ggtitle('Distribution of Max Difference in Predicted Probability') +
+  labs(x = 'Max Difference', y = 'Density') +
+  scale_x_continuous(label = percent) +
+  theme_bw()
+
+# Median difference estimate
+wilcox.test(
+  median_diff, 
+  conf.level = 0.95, 
+  alternative = "two.sided", 
+  conf.int = TRUE
+)$conf.int[1:2]
+
+#-------------------------------------------------------------------------------
+
+# Conclusion
+#-------------------------------------------------------------------------------
+# Based on the estimated median difference (0.0066-0.0067), the two methods can
+# be used interchangably, so long as a 0.6% difference in estimated probability
+# will not significantly impact the implications of the model results. For my
+# purposes, this small variability is worth the convenience of the 
+# pseudo-probability estimate.
 
 
 
