@@ -1,3 +1,5 @@
+library(tidyverse)
+library(caret)
 library(ranger)
 
 #-------------------------------------------------------------------------------
@@ -87,6 +89,7 @@ run <- function(seed, output = 'mean') {
 # Run simulations
 n_reps <- 1000
 mean_diff <- sapply(1:n_reps, function(i) run(i, output = 'mean'))
+mean_diff <- sapply(1:n_reps, function(i) run(i, output = 'median'))
 max_diff <- sapply(1:n_reps, function(i) run(i, output = 'max'))
 
 
